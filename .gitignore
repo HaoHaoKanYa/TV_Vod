@@ -1,0 +1,10 @@
+.idea
+.gradle
+*.jks
+lib-*.aar
+*build
+/media*
+/Release
+/local.properties
+ZMD/TV-Vod点播直播系统流程分析.md
+ZMD/TV-Vod项目架构分析.md

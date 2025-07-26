@@ -30,12 +30,14 @@ import com.fongmi.android.tv.model.SiteViewModel;
 import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.fragment.CollectFragment;
 import com.fongmi.android.tv.ui.presenter.CollectPresenter;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.PauseExecutor;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.google.gson.reflect.TypeToken;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class CollectActivity extends BaseActivity {
 
@@ -45,10 +47,16 @@ public class CollectActivity extends BaseActivity {
     private PauseExecutor mExecutor;
     private List<Site> mSites;
     private View mOldView;
+    private String flowId;
 
     public static void start(Activity activity, String keyword) {
+        // 生成搜索流程ID并记录搜索开始日志
+        String flowId = "SEARCH_" + System.currentTimeMillis() % 100000;
+        FlowLogger.logSearchExecute(flowId, keyword, "ALL_SITES");
+
         Intent intent = new Intent(activity, CollectActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra("keyword", keyword);
+        intent.putExtra("flowId", flowId);
         activity.startActivity(intent);
     }
 
@@ -58,6 +66,13 @@ public class CollectActivity extends BaseActivity {
 
     private String getKeyword() {
         return getIntent().getStringExtra("keyword");
+    }
+
+    private String getFlowId() {
+        if (flowId == null) {
+            flowId = Objects.toString(getIntent().getStringExtra("flowId"), "SEARCH_" + System.currentTimeMillis() % 100000);
+        }
+        return flowId;
     }
 
     @Override
@@ -139,8 +154,11 @@ public class CollectActivity extends BaseActivity {
 
     private void search(Site site) {
         try {
+            long startTime = System.currentTimeMillis();
+            FlowLogger.logSearchExecute(getFlowId(), getKeyword(), site.getKey());
             mViewModel.searchContent(site, getKeyword(), false);
-        } catch (Throwable ignored) {
+        } catch (Throwable e) {
+            FlowLogger.logSearchError(getFlowId(), getKeyword(), site.getKey(), e);
         }
     }
 

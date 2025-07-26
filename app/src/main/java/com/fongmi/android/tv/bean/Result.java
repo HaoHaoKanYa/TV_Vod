@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 
 import com.fongmi.android.tv.App;
 import com.fongmi.android.tv.Setting;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.gson.DanmakuAdapter;
 import com.fongmi.android.tv.gson.FilterAdapter;
 import com.fongmi.android.tv.gson.MsgAdapter;
@@ -99,6 +100,10 @@ public class Result implements Parcelable {
 
     public static Result fromJson(String str) {
         Result result = objectFrom(str);
+        if (result != null) {
+            // 记录电影ID解析日志
+            logMovieIdParsing("JSON", result);
+        }
         return result == null ? empty() : result.trans();
     }
 
@@ -345,4 +350,32 @@ public class Result implements Parcelable {
             return new Result[size];
         }
     };
+
+    /**
+     * 记录电影ID解析日志
+     */
+    private static void logMovieIdParsing(String parseType, Result result) {
+        try {
+            if (result.getList() != null && !result.getList().isEmpty()) {
+                int movieCount = result.getList().size();
+                StringBuilder movieIds = new StringBuilder();
+
+                // 记录前5个电影的ID作为示例
+                int logCount = Math.min(5, movieCount);
+                for (int i = 0; i < logCount; i++) {
+                    Vod vod = result.getList().get(i);
+                    if (i > 0) movieIds.append(", ");
+                    movieIds.append(String.format("%s(ID:%s)", vod.getVodName(), vod.getVodId()));
+                }
+                if (movieCount > 5) {
+                    movieIds.append(String.format("... 等%d部电影", movieCount));
+                }
+
+                // 使用FlowLogger系统记录日志
+                FlowLogger.logMovieIdParse(parseType, movieCount, movieIds.toString());
+            }
+        } catch (Exception e) {
+            android.util.Log.e("VOD_FLOW", "[MOVIE_ID_PARSE] 电影ID解析日志记录失败", e);
+        }
+    }
 }

@@ -12,6 +12,7 @@ import com.fongmi.android.tv.bean.Parse;
 import com.fongmi.android.tv.bean.Rule;
 import com.fongmi.android.tv.bean.Site;
 import com.fongmi.android.tv.impl.Callback;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.bean.Doh;
@@ -37,6 +38,9 @@ public class VodConfig {
     private Parse parse;
     private String wall;
     private Site home;
+
+    // 流程跟踪ID
+    private String currentFlowId;
 
     private static class Loader {
         static volatile VodConfig INSTANCE = new VodConfig();
@@ -66,7 +70,15 @@ public class VodConfig {
         return !get().getParses().isEmpty();
     }
 
+    public static String getCurrentFlowId() {
+        return get().currentFlowId;
+    }
+
     public static void load(Config config, Callback callback) {
+        // 生成新的流程ID并记录配置输入
+        String flowId = FlowLogger.generateFlowId();
+        get().currentFlowId = flowId;
+        FlowLogger.logVodConfigInput(flowId, config.getUrl());
         get().clear().config(config).load(callback);
     }
 
@@ -111,9 +123,17 @@ public class VodConfig {
 
     private void loadConfig(Callback callback) {
         try {
+            // 添加版本验证日志
+            android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [VERSION_CHECK] JavaScript日志系统已集成 - 版本: 2025.01.26",
+                new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()), currentFlowId));
+
+            FlowLogger.logVodConfigDownloadStart(currentFlowId, config.getUrl());
             OkHttp.cancel("vod");
-            checkJson(Json.parse(Decoder.getJson(UrlUtil.convert(config.getUrl()), "vod")).getAsJsonObject(), callback);
+            String jsonContent = Decoder.getJson(UrlUtil.convert(config.getUrl()), "vod");
+            FlowLogger.logVodConfigDownloadSuccess(currentFlowId, jsonContent != null ? jsonContent.length() : 0);
+            checkJson(Json.parse(jsonContent).getAsJsonObject(), callback);
         } catch (Throwable e) {
+            FlowLogger.logVodConfigDownloadError(currentFlowId, e);
             if (TextUtils.isEmpty(config.getUrl())) App.post(() -> callback.error(""));
             else loadCache(callback, e);
             e.printStackTrace();
@@ -146,16 +166,19 @@ public class VodConfig {
 
     private void parseConfig(JsonObject object, Callback callback) {
         try {
+            FlowLogger.logVodConfigParseStart(currentFlowId);
             initSite(object);
             initParse(object);
             initOther(object);
             if (loadLive && object.has("lives")) initLive(object);
             String notice = Json.safeString(object, "notice");
             config.logo(Json.safeString(object, "logo"));
+            FlowLogger.logVodConfigParseSuccess(currentFlowId, sites.size(), parses.size());
             App.post(() -> callback.success(notice));
             config.json(object.toString()).update();
             App.post(callback::success);
         } catch (Throwable e) {
+            FlowLogger.logVod(currentFlowId, FlowLogger.VodStage.CONFIG_PARSE, FlowLogger.Level.ERROR, "配置解析失败", e);
             e.printStackTrace();
             App.post(() -> callback.error(Notify.getError(R.string.error_config_parse, e)));
         }
@@ -167,6 +190,9 @@ public class VodConfig {
             return;
         }
         String spider = Json.safeString(object, "spider");
+        if (!TextUtils.isEmpty(spider)) {
+            FlowLogger.logSpiderLoad(currentFlowId, "JAR", spider);
+        }
         BaseLoader.get().parseJar(spider, true);
         for (JsonElement element : Json.safeListElement(object, "sites")) {
             Site site = Site.objectFrom(element);
@@ -174,6 +200,7 @@ public class VodConfig {
             site.setApi(UrlUtil.convert(site.getApi()));
             site.setExt(UrlUtil.convert(site.getExt()));
             site.setJar(parseJar(site, spider));
+            FlowLogger.logVodSiteInit(currentFlowId, site.getKey(), site.getName(), site.getApi());
             sites.add(site.trans().sync());
         }
         for (Site site : sites) {

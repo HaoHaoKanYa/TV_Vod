@@ -8,3 +8,7 @@ lib-*.aar
 /local.properties
 ZMD/TV-Vod点播直播系统流程分析.md
 ZMD/TV-Vod项目架构分析.md
+ZMD/TV-Vod日志跟踪流程图.md
+ZMD/TV-Vod日志跟踪系统使用指南.md
+/ZMD/
+ZMD/00AS构建日志

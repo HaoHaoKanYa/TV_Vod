@@ -18,6 +18,7 @@ import com.fongmi.android.tv.bean.Url;
 import com.fongmi.android.tv.bean.Vod;
 import com.fongmi.android.tv.exception.ExtractException;
 import com.fongmi.android.tv.player.Source;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.fongmi.android.tv.utils.Sniffer;
 import com.github.catvod.crawler.Spider;
@@ -46,6 +47,7 @@ public class SiteViewModel extends ViewModel {
     public MutableLiveData<Result> search;
     public MutableLiveData<Result> action;
     private ExecutorService executor;
+    private String currentFlowId;
 
     public SiteViewModel() {
         this.episode = new MutableLiveData<>();
@@ -57,6 +59,10 @@ public class SiteViewModel extends ViewModel {
 
     public void setEpisode(Episode value) {
         episode.setValue(value);
+    }
+
+    public void setFlowId(String flowId) {
+        this.currentFlowId = flowId;
     }
 
     public void homeContent() {
@@ -112,34 +118,113 @@ public class SiteViewModel extends ViewModel {
 
     public void detailContent(String key, String id) {
         execute(result, () -> {
+            long startTime = System.currentTimeMillis();
+
+            // 添加调试日志，确认FlowID状态
+            android.util.Log.i("VOD_FLOW", String.format("=== [FlowID:%s] === SiteViewModel详情获取开始 ===", currentFlowId));
+            android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [DETAIL_CONTENT] SiteViewModel.detailContent called, key: %s, id: %s",
+                currentFlowId, key, id));
+
+            // 记录开始获取详情内容
+            if (currentFlowId != null) {
+                FlowLogger.logVodDetailContentStart(currentFlowId, key, id);
+            } else {
+                // 如果没有FlowID，生成一个临时的
+                currentFlowId = "TEMP_DETAIL_" + System.currentTimeMillis() % 100000;
+                android.util.Log.i("VOD_FLOW", String.format("[DEBUG] 生成临时FlowID: %s", currentFlowId));
+                FlowLogger.logVodDetailContentStart(currentFlowId, key, id);
+            }
+
             Site site = VodConfig.get().getSite(key);
+            if (site == null) {
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContent(currentFlowId, key, id, false, "站点不存在: " + key);
+                }
+                throw new RuntimeException("站点不存在: " + key);
+            }
+
+            // 记录站点信息
+            if (currentFlowId != null) {
+                FlowLogger.logVodDetailContentSiteInfo(currentFlowId, key, site.getName(), site.getType(), site.getApi());
+            }
+
+            Result result;
             if (site.getType() == 3) {
-                Spider spider = site.recent().spider();
+                // JavaScript Spider类型
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentSpiderType(currentFlowId, key, "JavaScript Spider");
+                }
+
+                Spider spider = site.recent().spider(currentFlowId);
+
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentSpiderCall(currentFlowId, key, id, "detailContent");
+                }
+
                 String detailContent = spider.detailContent(Arrays.asList(id));
                 SpiderDebug.log(detailContent);
-                Result result = Result.fromJson(detailContent);
+
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentSpiderResponse(currentFlowId, key, id,
+                        detailContent != null ? detailContent.length() : 0);
+                }
+
+                result = Result.fromJson(detailContent);
                 if (!result.getList().isEmpty()) result.getList().get(0).setVodFlags();
                 if (!result.getList().isEmpty()) Source.get().parse(result.getList().get(0).getVodFlags());
-                return result;
             } else if (site.isEmpty() && "push_agent".equals(key)) {
+                // Push Agent类型
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentSpiderType(currentFlowId, key, "Push Agent");
+                }
+
                 Vod vod = new Vod();
                 vod.setVodId(id);
                 vod.setVodName(id);
                 vod.setVodPic(ResUtil.getString(R.string.push_image));
                 vod.setVodFlags(Flag.create(ResUtil.getString(R.string.push), id));
                 Source.get().parse(vod.getVodFlags());
-                return Result.vod(vod);
+                result = Result.vod(vod);
             } else {
+                // HTTP API类型
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentSpiderType(currentFlowId, key, "HTTP API (Type " + site.getType() + ")");
+                }
+
                 ArrayMap<String, String> params = new ArrayMap<>();
                 params.put("ac", site.getType() == 0 ? "videolist" : "detail");
                 params.put("ids", id);
+
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentHttpRequest(currentFlowId, key, site.getApi(), params.toString());
+                }
+
                 String detailContent = call(site, params);
                 SpiderDebug.log(detailContent);
-                Result result = Result.fromType(site.getType(), detailContent);
+
+                if (currentFlowId != null) {
+                    FlowLogger.logVodDetailContentHttpResponse(currentFlowId, key,
+                        detailContent != null ? detailContent.length() : 0);
+                }
+
+                result = Result.fromType(site.getType(), detailContent);
                 if (!result.getList().isEmpty()) result.getList().get(0).setVodFlags();
                 if (!result.getList().isEmpty()) Source.get().parse(result.getList().get(0).getVodFlags());
-                return result;
             }
+
+            // 记录详情内容获取完成
+            if (currentFlowId != null) {
+                long duration = System.currentTimeMillis() - startTime;
+                int vodCount = result.getList().size();
+                String vodName = vodCount > 0 ? result.getList().get(0).getVodName() : "未知";
+                int flagCount = vodCount > 0 ? result.getList().get(0).getVodFlags().size() : 0;
+
+                FlowLogger.logVodDetailContentComplete(currentFlowId, key, id, vodName, flagCount, duration);
+                FlowLogger.logVodDetailContent(currentFlowId, key, id, true,
+                    String.format("获取成功，影片: %s，线路数: %d，耗时: %dms", vodName, flagCount, duration));
+            }
+
+            return result;
         });
     }
 

@@ -41,6 +41,7 @@ public class Spider extends com.github.catvod.crawler.Spider {
     private final String key;
     private final String api;
     private boolean cat;
+    private String flowId;
 
     public Spider(String key, String api, DexClassLoader dex) throws Exception {
         this.executor = Executors.newSingleThreadExecutor();
@@ -50,21 +51,65 @@ public class Spider extends com.github.catvod.crawler.Spider {
         initializeJS();
     }
 
+    public void setFlowId(String flowId) {
+        this.flowId = flowId;
+    }
+
     private void submit(Runnable runnable) {
         executor.submit(runnable);
     }
 
-    private <T> Future<T> submit(Callable<T> callable) {
+    private <T> Future<T> submitCallable(Callable<T> callable) {
         return executor.submit(callable);
     }
 
     private Object call(String func, Object... args) throws Exception {
-        return CompletableFuture.supplyAsync(() -> Async.run(jsObject, func, args), executor).join().get();
+        long startTime = System.currentTimeMillis();
+
+        if (flowId != null) {
+            try {
+                String argsStr = args.length > 0 ? String.valueOf(args.length) + "个参数" : "无参数";
+                android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [JS_FUNCTION_CALL] 调用JavaScript函数 [%s] %s(%s)",
+                    new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+                    flowId, key, func, argsStr));
+            } catch (Exception e) {
+                // 忽略日志错误
+            }
+        }
+
+        try {
+            Object result = CompletableFuture.supplyAsync(() -> Async.run(jsObject, func, args), executor).join().get();
+
+            if (flowId != null) {
+                try {
+                    long duration = System.currentTimeMillis() - startTime;
+                    String resultStr = result != null ? String.valueOf(result).length() + "字符" : "null";
+                    android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [JS_FUNCTION_CALL] JavaScript函数调用成功 [%s] %s()，耗时: %dms，返回: %s",
+                        new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+                        flowId, key, func, duration, resultStr));
+                } catch (Exception e) {
+                    // 忽略日志错误
+                }
+            }
+
+            return result;
+        } catch (Exception e) {
+            if (flowId != null) {
+                try {
+                    android.util.Log.e("VOD_FLOW", String.format("[%s] [FlowID:%s] [JS_FUNCTION_CALL] JavaScript函数调用失败 [%s] %s()",
+                        new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+                        flowId, key, func), e);
+                } catch (Exception ex) {
+                    // 忽略日志错误
+                }
+            }
+            throw e;
+        }
     }
 
     @Override
     public void init(Context context, String extend) throws Exception {
-        if (cat) call("init", submit(() -> cfg(extend)).get());
+        if (cat) call("init", submitCallable(() -> cfg(extend)).get());
         else call("init", Json.isObj(extend) ? ctx.parse(extend) : extend);
     }
 
@@ -80,7 +125,7 @@ public class Spider extends com.github.catvod.crawler.Spider {
 
     @Override
     public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) throws Exception {
-        JSObject obj = submit(() -> JSUtil.toObject(ctx, extend)).get();
+        JSObject obj = submitCallable(() -> JSUtil.toObject(ctx, extend)).get();
         return (String) call("category", tid, pg, filter, obj);
     }
 
@@ -101,7 +146,7 @@ public class Spider extends com.github.catvod.crawler.Spider {
 
     @Override
     public String playerContent(String flag, String id, List<String> vipFlags) throws Exception {
-        JSArray array = submit(() -> JSUtil.toArray(ctx, vipFlags)).get();
+        JSArray array = submitCallable(() -> JSUtil.toArray(ctx, vipFlags)).get();
         return (String) call("play", flag, id, array);
     }
 
@@ -123,7 +168,7 @@ public class Spider extends com.github.catvod.crawler.Spider {
     @Override
     public Object[] proxyLocal(Map<String, String> params) throws Exception {
         if ("catvod".equals(params.get("from"))) return proxy2(params);
-        else return submit(() -> proxy1(params)).get();
+        else return submitCallable(() -> proxy1(params)).get();
     }
 
     @Override
@@ -146,7 +191,7 @@ public class Spider extends com.github.catvod.crawler.Spider {
     }
 
     private void initializeJS() throws Exception {
-        submit(() -> {
+        submitCallable(() -> {
             createCtx();
             createFun();
             createObj();
@@ -217,8 +262,8 @@ public class Spider extends com.github.catvod.crawler.Spider {
     private Object[] proxy2(Map<String, String> params) throws Exception {
         String url = params.get("url");
         String header = params.get("header");
-        JSArray array = submit(() -> JSUtil.toArray(ctx, Arrays.asList(url.split("/")))).get();
-        Object object = submit(() -> ctx.parse(header)).get();
+        JSArray array = submitCallable(() -> JSUtil.toArray(ctx, Arrays.asList(url.split("/")))).get();
+        Object object = submitCallable(() -> ctx.parse(header)).get();
         String json = (String) call("proxy", array, object);
         Res res = Res.objectFrom(json);
         Object[] result = new Object[3];

@@ -6,6 +6,7 @@ import com.fongmi.android.tv.api.config.LiveConfig;
 import com.fongmi.android.tv.api.config.VodConfig;
 import com.fongmi.android.tv.bean.Live;
 import com.fongmi.android.tv.bean.Site;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.SpiderNull;
 import com.github.catvod.utils.Util;
@@ -23,6 +24,7 @@ public class BaseLoader {
     private final JarLoader jarLoader;
     private final PyLoader pyLoader;
     private final JsLoader jsLoader;
+    private String currentFlowId;
 
     private static class Loader {
         static volatile BaseLoader INSTANCE = new BaseLoader();
@@ -38,6 +40,11 @@ public class BaseLoader {
         this.jsLoader = new JsLoader();
     }
 
+    public void setFlowId(String flowId) {
+        this.currentFlowId = flowId;
+        this.jsLoader.setFlowId(flowId);
+    }
+
     public void clear() {
         this.jarLoader.clear();
         this.pyLoader.clear();
@@ -48,8 +55,23 @@ public class BaseLoader {
         boolean js = api.contains(".js");
         boolean py = api.contains(".py");
         boolean csp = api.startsWith("csp_");
+
+        // 添加调试日志
+        if (currentFlowId != null) {
+            android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [SPIDER_TYPE_CHECK] 站点 [%s] API: %s, JS: %s, PY: %s, CSP: %s",
+                new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+                currentFlowId, key, api, js, py, csp));
+        }
+
         if (py) return pyLoader.getSpider(key, api, ext);
-        else if (js) return jsLoader.getSpider(key, api, ext, jar);
+        else if (js) {
+            if (currentFlowId != null) {
+                android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [JS_LOADER_CALLED] 调用JsLoader处理JavaScript站点 [%s]",
+                    new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+                    currentFlowId, key));
+            }
+            return jsLoader.getSpider(key, api, ext, jar);
+        }
         else if (csp) return jarLoader.getSpider(key, api, ext, jar);
         else return new SpiderNull();
     }

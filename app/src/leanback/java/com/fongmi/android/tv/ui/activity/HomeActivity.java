@@ -55,6 +55,7 @@ import com.fongmi.android.tv.ui.presenter.ProgressPresenter;
 import com.fongmi.android.tv.ui.presenter.VodPresenter;
 import com.fongmi.android.tv.utils.Clock;
 import com.fongmi.android.tv.utils.FileChooser;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
@@ -395,9 +396,15 @@ public class HomeActivity extends BaseActivity implements CustomTitleView.Listen
 
     @Override
     public void onItemClick(Vod item) {
-        if (item.isAction()) mViewModel.action(getHome().getKey(), item.getAction());
-        else if (getHome().isIndex()) CollectActivity.start(getActivity(), item.getVodName());
-        else VideoActivity.start(this, getHome().getKey(), item.getVodId(), item.getVodName(), item.getVodPic());
+        if (item.isAction()) {
+            mViewModel.action(getHome().getKey(), item.getAction());
+        } else {
+            // 使用FlowLogger系统记录首页电影点击日志
+            FlowLogger.logMovieIdClick(item.getVodName(), item.getVodId(), getHome().getKey(), "HomeActivity");
+
+            if (getHome().isIndex()) CollectActivity.start(getActivity(), item.getVodName());
+            else VideoActivity.start(this, getHome().getKey(), item.getVodId(), item.getVodName(), item.getVodPic());
+        }
     }
 
     @Override

@@ -310,7 +310,42 @@ public class Site implements Parcelable {
     }
 
     public Spider spider() {
+        // 添加调试日志
+        android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:NONE] [SPIDER_CREATE_NO_FLOW] 创建Spider [%s] API: %s",
+            new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+            getKey(), getApi()));
+
+        // 生成一个临时FlowID用于跟踪
+        String tempFlowId = "TEMP_" + System.currentTimeMillis() % 10000;
+        BaseLoader.get().setFlowId(tempFlowId);
+
         return BaseLoader.get().getSpider(getKey(), getApi(), getExt(), getJar());
+    }
+
+    public Spider spider(String flowId) {
+        // 添加测试日志
+        android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [SPIDER_CREATE] 创建Spider [%s] API: %s",
+            new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+            flowId, getKey(), getApi()));
+
+        // 设置BaseLoader的流程ID，这样JavaScript Spider也能获得流程ID
+        BaseLoader.get().setFlowId(flowId);
+
+        Spider originalSpider = BaseLoader.get().getSpider(getKey(), getApi(), getExt(), getJar());
+        if (originalSpider != null) {
+            com.fongmi.android.tv.api.SpiderWrapper wrapper = new com.fongmi.android.tv.api.SpiderWrapper(originalSpider, getKey());
+            wrapper.setFlowId(flowId);
+
+            // 检查是否是JavaScript Spider
+            if (getApi().contains(".js")) {
+                android.util.Log.i("VOD_FLOW", String.format("[%s] [FlowID:%s] [JS_SPIDER_DETECTED] 检测到JavaScript Spider [%s]",
+                    new java.text.SimpleDateFormat("HH:mm:ss.SSS").format(new java.util.Date()),
+                    flowId, getKey()));
+            }
+
+            return wrapper;
+        }
+        return originalSpider;
     }
 
     public static Site find(String key) {

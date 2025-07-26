@@ -8,6 +8,7 @@ import com.fongmi.android.tv.bean.ClearKey;
 import com.fongmi.android.tv.bean.Drm;
 import com.fongmi.android.tv.bean.Group;
 import com.fongmi.android.tv.bean.Live;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Json;
@@ -46,10 +47,41 @@ public class LiveParser {
     }
 
     public static void start(Live live) throws Exception {
+        start(live, null);
+    }
+
+    public static void start(Live live, String flowId) throws Exception {
         if (!live.getGroups().isEmpty()) return;
+
+        if (flowId != null) {
+            FlowLogger.logLive(flowId, FlowLogger.LiveStage.LIVE_SOURCE_PARSE, FlowLogger.Level.INFO,
+                String.format("开始解析直播源: %s", live.getName()));
+        }
+
         String text = getText(live);
-        if (Json.isArray(text)) json(live, text);
-        else text(live, text);
+        String format;
+
+        if (Json.isArray(text)) {
+            format = "JSON";
+            if (flowId != null) {
+                FlowLogger.logLive(flowId, FlowLogger.LiveStage.LIVE_SOURCE_PARSE, FlowLogger.Level.INFO,
+                    String.format("检测到JSON格式直播源: %s", live.getName()));
+            }
+            json(live, text, flowId);
+        } else {
+            format = M3U.matcher(text).find() ? "M3U" : "TXT";
+            if (flowId != null) {
+                FlowLogger.logLive(flowId, FlowLogger.LiveStage.LIVE_SOURCE_PARSE, FlowLogger.Level.INFO,
+                    String.format("检测到%s格式直播源: %s", format, live.getName()));
+            }
+            text(live, text, flowId);
+        }
+
+        if (flowId != null) {
+            int groupCount = live.getGroups().size();
+            int channelCount = live.getGroups().stream().mapToInt(g -> g.getChannel().size()).sum();
+            FlowLogger.logLiveSourceParse(flowId, live.getName(), format, true, groupCount, channelCount);
+        }
     }
 
     private static String getText(Live live) throws Exception {
@@ -58,29 +90,47 @@ public class LiveParser {
     }
 
     public static void text(Live live, String text) {
+        text(live, text, null);
+    }
+
+    public static void text(Live live, String text, String flowId) {
         int number = 0;
         if (!live.getGroups().isEmpty()) return;
-        if (M3U.matcher(text).find()) m3u(live, text); else txt(live, text);
+        if (M3U.matcher(text).find()) m3u(live, text, flowId); else txt(live, text, flowId);
         for (Group group : live.getGroups()) {
             for (Channel channel : group.getChannel()) {
                 if (channel.getNumber().isEmpty()) channel.setNumber(++number);
                 channel.live(live);
+                if (flowId != null) {
+                    FlowLogger.logLiveChannelParse(flowId, channel.getName(), group.getName(), channel.getUrls().size());
+                }
             }
         }
     }
 
     private static void json(Live live, String text) {
+        json(live, text, null);
+    }
+
+    private static void json(Live live, String text, String flowId) {
         int number = 0;
         live.getGroups().addAll(Group.arrayFrom(text));
         for (Group group : live.getGroups()) {
             for (Channel channel : group.getChannel()) {
                 if (channel.getNumber().isEmpty()) channel.setNumber(++number);
                 channel.live(live);
+                if (flowId != null) {
+                    FlowLogger.logLiveChannelParse(flowId, channel.getName(), group.getName(), channel.getUrls().size());
+                }
             }
         }
     }
 
     private static void m3u(Live live, String text) {
+        m3u(live, text, null);
+    }
+
+    private static void m3u(Live live, String text, String flowId) {
         Setting setting = Setting.create();
         Catchup catchup = Catchup.create();
         Channel channel = Channel.create("");
@@ -118,6 +168,10 @@ public class LiveParser {
     }
 
     private static void txt(Live live, String text) {
+        txt(live, text, null);
+    }
+
+    private static void txt(Live live, String text, String flowId) {
         Setting setting = Setting.create();
         text = text.replace("\r\n", "\n").replace("\r", "");
         for (String line : text.split("\n")) {

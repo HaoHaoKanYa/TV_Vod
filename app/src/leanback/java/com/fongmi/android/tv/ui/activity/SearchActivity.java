@@ -27,6 +27,7 @@ import com.fongmi.android.tv.ui.custom.CustomKeyboard;
 import com.fongmi.android.tv.ui.custom.CustomTextListener;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.ui.dialog.SiteDialog;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.KeyUtil;
 import com.fongmi.android.tv.utils.Util;
 import com.github.catvod.net.OkHttp;
@@ -46,9 +47,16 @@ public class SearchActivity extends BaseActivity implements WordAdapter.OnClickL
     private ActivitySearchBinding mBinding;
     private RecordAdapter mRecordAdapter;
     private WordAdapter mWordAdapter;
+    private String flowId;
 
     public static void start(Activity activity) {
-        activity.startActivity(new Intent(activity, SearchActivity.class));
+        // 生成搜索流程ID并记录搜索功能打开日志
+        String flowId = "SEARCH_OPEN_" + System.currentTimeMillis() % 100000;
+        FlowLogger.logSearchOpen(flowId, activity.getClass().getSimpleName());
+
+        Intent intent = new Intent(activity, SearchActivity.class);
+        intent.putExtra("flowId", flowId);
+        activity.startActivity(intent);
     }
 
     @Override

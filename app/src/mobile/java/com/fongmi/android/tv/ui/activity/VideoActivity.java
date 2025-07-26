@@ -73,6 +73,7 @@ import com.fongmi.android.tv.ui.base.BaseActivity;
 import com.fongmi.android.tv.ui.base.ViewType;
 import com.fongmi.android.tv.ui.custom.CustomKeyDownVod;
 import com.fongmi.android.tv.ui.custom.CustomMovement;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.ui.custom.SpaceItemDecoration;
 import com.fongmi.android.tv.ui.dialog.CastDialog;
 import com.fongmi.android.tv.ui.dialog.ControlDialog;
@@ -147,6 +148,7 @@ public class VideoActivity extends BaseActivity implements Clock.Callback, Custo
     private Runnable mR4;
     private Clock mClock;
     private String tag;
+    private String flowId;
     private PiP mPiP;
 
     public static void push(FragmentActivity activity, String text) {
@@ -185,6 +187,16 @@ public class VideoActivity extends BaseActivity implements Clock.Callback, Custo
     }
 
     public static void start(Activity activity, String key, String id, String name, String pic, String mark, boolean collect) {
+        // 生成流程ID并记录电影点击日志
+        String flowId = "MOVIE_" + System.currentTimeMillis() % 100000;
+
+        // 添加直接的调试日志，确保FlowID能被看到
+        android.util.Log.i("VOD_FLOW", String.format("=== [FlowID:%s] === 电影点击开始 ===", flowId));
+        android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [MOVIE_CLICK] 点击电影 [%s] %s，来源: %s",
+            flowId, key, name, activity.getClass().getSimpleName()));
+
+        FlowLogger.logMovieClick(flowId, name, key, activity.getClass().getSimpleName());
+
         Intent intent = new Intent(activity, VideoActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         intent.putExtra("collect", collect);
         intent.putExtra("mark", mark);
@@ -192,6 +204,7 @@ public class VideoActivity extends BaseActivity implements Clock.Callback, Custo
         intent.putExtra("pic", pic);
         intent.putExtra("key", key);
         intent.putExtra("id", id);
+        intent.putExtra("flowId", flowId);
         activity.startActivity(intent);
     }
 
@@ -213,6 +226,13 @@ public class VideoActivity extends BaseActivity implements Clock.Callback, Custo
 
     private String getId() {
         return Objects.toString(getIntent().getStringExtra("id"), "");
+    }
+
+    private String getFlowId() {
+        if (flowId == null) {
+            flowId = Objects.toString(getIntent().getStringExtra("flowId"), "VIDEO_" + System.currentTimeMillis() % 100000);
+        }
+        return flowId;
     }
 
     private String getHistoryKey() {
@@ -279,6 +299,9 @@ public class VideoActivity extends BaseActivity implements Clock.Callback, Custo
 
     @Override
     protected void initView(Bundle savedInstanceState) {
+        // 记录电影详情页打开日志
+        FlowLogger.logMovieDetailOpen(getFlowId(), getName(), getId());
+
         mKeyDown = CustomKeyDownVod.create(this, mBinding.exo);
         mFrameParams = mBinding.video.getLayoutParams();
         mBinding.progressLayout.showProgress();
@@ -415,12 +438,38 @@ public class VideoActivity extends BaseActivity implements Clock.Callback, Custo
     }
 
     private void checkId() {
-        if (getId().startsWith("push://")) getIntent().putExtra("key", "push_agent").putExtra("id", getId().substring(7));
-        if (getId().isEmpty() || getId().startsWith("msearch:")) setEmpty(false);
-        else getDetail();
+        String originalId = getId();
+
+        // 记录原始ID
+        android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [ID_CHECK] 检查电影ID: 原始ID=%s", getFlowId(), originalId));
+
+        if (getId().startsWith("push://")) {
+            String newId = getId().substring(7);
+            getIntent().putExtra("key", "push_agent").putExtra("id", newId);
+            android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [ID_TRANSFORM] Push协议转换: %s -> %s", getFlowId(), originalId, newId));
+            FlowLogger.logMovieIdUsage(getFlowId(), newId, "push_agent", "Push协议ID转换");
+        }
+
+        if (getId().isEmpty() || getId().startsWith("msearch:")) {
+            android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [ID_SPECIAL] 特殊ID处理: %s (设置为空页面)", getFlowId(), originalId));
+            FlowLogger.logMovieIdUsage(getFlowId(), originalId, getKey(), "特殊ID-设置空页面");
+            setEmpty(false);
+        } else {
+            android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [ID_NORMAL] 正常ID处理: %s (获取详情)", getFlowId(), getId()));
+            FlowLogger.logMovieIdUsage(getFlowId(), getId(), getKey(), "正常ID-获取详情");
+            getDetail();
+        }
     }
 
     private void getDetail() {
+        // 添加调试日志
+        String flowId = getFlowId();
+        android.util.Log.i("VOD_FLOW", String.format("=== [FlowID:%s] === 开始获取电影详情 ===", flowId));
+        android.util.Log.i("VOD_FLOW", String.format("[FlowID:%s] [DETAIL_START] VideoActivity.getDetail called, key: %s, id: %s",
+            flowId, getKey(), getId()));
+
+        // 设置ViewModel的流程ID，这样详情获取过程中的日志都会关联到同一个流程
+        mViewModel.setFlowId(flowId);
         mViewModel.detailContent(getKey(), getId());
     }
 

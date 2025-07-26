@@ -37,6 +37,7 @@ import com.fongmi.android.tv.ui.custom.CustomScroller;
 import com.fongmi.android.tv.ui.custom.CustomSelector;
 import com.fongmi.android.tv.ui.presenter.FilterPresenter;
 import com.fongmi.android.tv.ui.presenter.VodPresenter;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.ResUtil;
 import com.github.catvod.utils.Prefers;
@@ -282,10 +283,16 @@ public class VodFragment extends BaseFragment implements CustomScroller.Callback
         if (item.isAction()) {
             mViewModel.action(getKey(), item.getAction());
         } else if (item.isFolder()) {
+            // 记录文件夹点击日志
+            android.util.Log.i("VOD_FLOW", String.format("[MOVIE_ID_CLICK] 点击文件夹: %s，ID: %s，站点: %s",
+                item.getVodName(), item.getVodId(), getKey()));
             mPages.add(Page.get(item, mBinding.recycler.getSelectedPosition()));
             mBinding.recycler.setMoveTop(false);
             getVideo(item.getVodId(), "1");
         } else {
+            // 使用FlowLogger系统记录电影点击日志
+            FlowLogger.logMovieIdClick(item.getVodName(), item.getVodId(), getKey(), "VodFragment");
+
             if (getSite().isIndex()) CollectActivity.start(getActivity(), item.getVodName());
             else VideoActivity.start(getActivity(), getKey(), item.getVodId(), item.getVodName(), item.getVodPic(), isFolder() ? item.getVodName() : null);
         }

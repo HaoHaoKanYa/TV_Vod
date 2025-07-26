@@ -19,6 +19,7 @@ import com.fongmi.android.tv.bean.Rule;
 import com.fongmi.android.tv.db.AppDatabase;
 import com.fongmi.android.tv.impl.Callback;
 import com.fongmi.android.tv.ui.activity.LiveActivity;
+import com.fongmi.android.tv.utils.FlowLogger;
 import com.fongmi.android.tv.utils.Notify;
 import com.fongmi.android.tv.utils.UrlUtil;
 import com.github.catvod.net.OkHttp;
@@ -39,6 +40,9 @@ public class LiveConfig {
     private Config config;
     private boolean sync;
     private Live home;
+
+    // 流程跟踪ID
+    private String currentFlowId;
 
     private static class Loader {
         static volatile LiveConfig INSTANCE = new LiveConfig();
@@ -76,7 +80,15 @@ public class LiveConfig {
         return getUrl() != null && !getUrl().isEmpty();
     }
 
+    public static String getCurrentFlowId() {
+        return get().currentFlowId;
+    }
+
     public static void load(Config config, Callback callback) {
+        // 生成新的流程ID并记录配置输入
+        String flowId = FlowLogger.generateFlowId();
+        get().currentFlowId = flowId;
+        FlowLogger.logLiveConfigInput(flowId, config.getUrl());
         get().clear().config(config).load(callback);
     }
 
@@ -113,9 +125,14 @@ public class LiveConfig {
 
     private void loadConfig(Callback callback) {
         try {
+            FlowLogger.logLive(currentFlowId, FlowLogger.LiveStage.CONFIG_DOWNLOAD, FlowLogger.Level.INFO,
+                String.format("开始下载直播配置: %s", config.getUrl()));
             OkHttp.cancel("live");
-            parseConfig(Decoder.getJson(UrlUtil.convert(config.getUrl()), "live"), callback);
+            String content = Decoder.getJson(UrlUtil.convert(config.getUrl()), "live");
+            FlowLogger.logLiveConfigDownload(currentFlowId, config.getUrl(), true, content);
+            parseConfig(content, callback);
         } catch (Throwable e) {
+            FlowLogger.logLiveConfigDownload(currentFlowId, config.getUrl(), false, e.getMessage());
             if (TextUtils.isEmpty(config.getUrl())) App.post(() -> callback.error(""));
             else App.post(() -> callback.error(Notify.getError(R.string.error_config_get, e)));
             e.printStackTrace();
@@ -123,10 +140,18 @@ public class LiveConfig {
     }
 
     private void parseConfig(String text, Callback callback) {
-        if (!Json.isObj(text)) {
-            parseText(text, callback);
-        } else {
-            checkJson(Json.parse(text).getAsJsonObject(), callback);
+        try {
+            FlowLogger.logLive(currentFlowId, FlowLogger.LiveStage.CONFIG_PARSE, FlowLogger.Level.INFO, "开始解析直播配置");
+            if (!Json.isObj(text)) {
+                FlowLogger.logLive(currentFlowId, FlowLogger.LiveStage.CONFIG_PARSE, FlowLogger.Level.INFO, "检测到文本格式配置(M3U/TXT)");
+                parseText(text, callback);
+            } else {
+                FlowLogger.logLive(currentFlowId, FlowLogger.LiveStage.CONFIG_PARSE, FlowLogger.Level.INFO, "检测到JSON格式配置");
+                checkJson(Json.parse(text).getAsJsonObject(), callback);
+            }
+        } catch (Exception e) {
+            FlowLogger.logLive(currentFlowId, FlowLogger.LiveStage.CONFIG_PARSE, FlowLogger.Level.ERROR, "配置解析失败", e);
+            throw e;
         }
     }
 
